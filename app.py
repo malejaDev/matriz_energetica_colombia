@@ -163,19 +163,21 @@ def render_text_summary(summary: dict):
 def get_filtered_data(df: pd.DataFrame):
     """Aplica filtros comunes y devuelve el dataframe filtrado y los parámetros usados."""
     years = sorted(df['Año'].unique())
-    selected_years = st.sidebar.multiselect("📅 Años:", options=years, default=years, key="years_filter")
-
     energy_types = sorted(df['Tipo_Energia'].unique())
-    selected_energy = st.sidebar.multiselect("⚡ Tipo de Energía:", options=energy_types, default=energy_types, key="energy_filter")
-
     min_inv, max_inv = float(df['Inversion_USD_millones'].min()), float(df['Inversion_USD_millones'].max())
-    selected_inv = st.sidebar.slider(
-        "💰 Inversión (Millones USD):",
-        min_value=min_inv,
-        max_value=max_inv,
-        value=(min_inv, max_inv),
-        key="inv_filter",
-    )
+
+    with st.sidebar.expander("⚙️ Filtros detallados", expanded=True):
+        selected_years = st.multiselect("📅 Años:", options=years, default=years, key="years_filter")
+
+        selected_energy = st.multiselect("⚡ Tipo de Energía:", options=energy_types, default=energy_types, key="energy_filter")
+
+        selected_inv = st.slider(
+            "💰 Inversión (Millones USD):",
+            min_value=min_inv,
+            max_value=max_inv,
+            value=(min_inv, max_inv),
+            key="inv_filter",
+        )
 
     df_f = df[
         (df['Año'].isin(selected_years)) &
@@ -266,6 +268,7 @@ def dashboard():
             "downloads_title": "📥 Descarga de datos filtrados",
             "download_label": "Descargar CSV filtrado",
             "interactive_section": "📊 Visualizaciones Interactivas (Plotly)",
+            "quick_scenarios": "🎛️ Escenarios rápidos",
         },
         "EN": {
             "filters_title": "🔍 Analysis Filters",
@@ -274,12 +277,51 @@ def dashboard():
             "downloads_title": "📥 Download filtered data",
             "download_label": "Download filtered CSV",
             "interactive_section": "📊 Interactive Visualizations (Plotly)",
+            "quick_scenarios": "🎛️ Quick scenarios",
         },
     }
     t = texts[lang]
 
     st.sidebar.header(t["filters_title"])
     st.sidebar.markdown("---")
+
+    # Escenarios rápidos de filtros
+    st.sidebar.subheader(t["quick_scenarios"])
+    years_all = sorted(df["Año"].unique())
+    energy_all = sorted(df["Tipo_Energia"].unique())
+    min_inv, max_inv = float(df["Inversion_USD_millones"].min()), float(df["Inversion_USD_millones"].max())
+
+    col_s1, col_s2 = st.sidebar.columns(2)
+    with col_s1:
+        if st.button("2020 vs 2026"):
+            st.session_state["years_filter"] = [min(years_all), max(years_all)]
+            st.session_state["energy_filter"] = energy_all
+            st.session_state["inv_filter"] = (min_inv, max_inv)
+            st.experimental_rerun()
+    with col_s2:
+        if st.button("Alta inversión"):
+            st.session_state["years_filter"] = years_all
+            st.session_state["energy_filter"] = energy_all
+            # Top 25% de inversión
+            inv_threshold = df["Inversion_USD_millones"].quantile(0.75)
+            st.session_state["inv_filter"] = (float(inv_threshold), max_inv)
+            st.experimental_rerun()
+
+    if st.sidebar.button("Solo renovables más limpias"):
+        # Priorizar tecnologías con menor CO2/GWh dentro del propio dataset
+        tmp = (
+            df.groupby("Tipo_Energia")[["Emisiones_CO2_toneladas", "Generacion_GWh"]]
+            .sum()
+            .reset_index()
+        )
+        tmp = tmp[tmp["Generacion_GWh"] > 0].copy()
+        if not tmp.empty:
+            tmp["co2_por_gwh"] = tmp["Emisiones_CO2_toneladas"] / tmp["Generacion_GWh"]
+            clean_types = tmp.sort_values("co2_por_gwh")["Tipo_Energia"].head(2).tolist()
+            st.session_state["energy_filter"] = clean_types
+        st.session_state["years_filter"] = years_all
+        st.session_state["inv_filter"] = (min_inv, max_inv)
+        st.experimental_rerun()
 
     # Filtros reutilizables
     df_f, selected_years, selected_energy, selected_inv = get_filtered_data(df)
