@@ -16,6 +16,14 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=UserWarning, module='seaborn')
 
+# Paleta de colores consistente por tipo de energía
+ENERGY_COLOR_MAP = {
+    "Solar": "#FDB813",        # amarillo solar
+    "Eólica": "#2E86C1",       # azul viento
+    "Hídrica": "#1ABC9C",      # verde agua
+    "Geotérmica": "#AF7AC5",   # morado/geotermia
+}
+
 # Configuración de página
 st.set_page_config(
     page_title="Análisis de Datos Energéticos | Talento Tech",
@@ -260,6 +268,15 @@ def dashboard():
     # Selección de idioma básica
     lang = st.sidebar.selectbox("Idioma / Language", ["ES", "EN"], index=0, key="lang")
 
+    # Modo de visualización
+    view_mode = st.sidebar.radio(
+        "Modo de visualización",
+        options=["Básico", "Avanzado"],
+        index=0,
+        key="view_mode",
+        help="El modo básico muestra los elementos esenciales. El modo avanzado añade análisis detallado.",
+    )
+
     texts = {
         "ES": {
             "filters_title": "🔍 Filtros de Análisis",
@@ -331,7 +348,6 @@ def dashboard():
         return
 
     st.title(t["dashboard_title"])
-    st.markdown("---")
     
     # KPIs
     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
@@ -400,11 +416,13 @@ def dashboard():
             color="Tipo_Energia",
             markers=True,
             title="Tendencia interactiva de generación por año y tipo de energía",
+            color_discrete_map=ENERGY_COLOR_MAP,
         )
         plotly_with_help(
             fig_line,
-            "Explora la evolución anual de la generación (GWh) por tipo de energía. "
-            "Pasa el cursor para ver valores exactos y oculta/muestra series desde la leyenda.",
+            "Muestra: generación anual (GWh) por tipo de energía.\n"
+            "Cómo leerlo: compara la pendiente de cada línea para ver crecimientos o caídas.\n"
+            "Útil para: identificar qué tecnologías ganan o pierden relevancia en el tiempo.",
         )
 
     with tab2:
@@ -416,11 +434,13 @@ def dashboard():
             size="Generacion_GWh",
             hover_data=["Año"],
             title="Relación costo vs emisiones (tamaño = generación)",
+            color_discrete_map=ENERGY_COLOR_MAP,
         )
         plotly_with_help(
             fig_scatter,
-            "Analiza el trade-off entre costo (USD/MWh) y emisiones (ton CO₂). "
-            "El tamaño del punto representa la generación: puntos grandes indican mayor aporte energético.",
+            "Muestra: relación entre costo (USD/MWh) y emisiones (ton CO₂).\n"
+            "Cómo leerlo: cada punto es un registro; el tamaño indica la generación asociada.\n"
+            "Útil para: entender el trade-off entre sostenibilidad y costo por tecnología.",
         )
 
     with tab3:
@@ -443,19 +463,20 @@ def dashboard():
             "Los colores más intensos indican mayor generación (GWh) en el año seleccionado.",
         )
 
-    # Sección de análisis avanzado alineado con consultas SQL
-    st.markdown("---")
-    st.subheader("📊 Análisis avanzado de la matriz energética")
+    # Sección de análisis avanzado alineado con consultas SQL (solo en modo avanzado)
+    if view_mode == "Avanzado":
+        st.markdown("---")
+        st.subheader("📊 Análisis avanzado de la matriz energética")
 
-    adv_tab1, adv_tab2, adv_tab3, adv_tab4, adv_tab5 = st.tabs(
-        [
-            "Totales y promedios por tipo",
-            "Eficiencia energética",
-            "Costos de generación",
-            "Retorno de inversión",
-            "Cobertura, limpieza y participación",
-        ]
-    )
+        adv_tab1, adv_tab2, adv_tab3, adv_tab4, adv_tab5 = st.tabs(
+            [
+                "Totales y promedios por tipo",
+                "Eficiencia energética",
+                "Costos de generación",
+                "Retorno de inversión",
+                "Cobertura, limpieza y participación",
+            ]
+        )
 
     # 1) Totales y promedios por tipo de energía y año (4 gráficos)
     with adv_tab1:
