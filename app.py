@@ -57,6 +57,109 @@ def plotly_with_help(fig, help_text: str):
     show_help(help_text)
 
 
+def compute_summary_metrics(df_f: pd.DataFrame) -> dict:
+    """Calcula métricas resumen para conclusiones automáticas."""
+    summary: dict[str, object] = {}
+
+    if df_f.empty:
+        return summary
+
+    # Fuente con mayor generación total
+    gen_by_type = df_f.groupby("Tipo_Energia")["Generacion_GWh"].sum().sort_values(ascending=False)
+    total_gen = gen_by_type.sum()
+    top_gen_energy = gen_by_type.index[0]
+    top_gen_value = gen_by_type.iloc[0]
+    top_gen_pct = (top_gen_value / total_gen * 100) if total_gen > 0 else 0
+
+    # Fuente más limpia (menor CO2 por GWh)
+    emis = (
+        df_f.groupby("Tipo_Energia")[["Emisiones_CO2_toneladas", "Generacion_GWh"]]
+        .sum()
+        .reset_index()
+    )
+    emis = emis[emis["Generacion_GWh"] > 0].copy()
+    if not emis.empty:
+        emis["co2_por_gwh"] = emis["Emisiones_CO2_toneladas"] / emis["Generacion_GWh"]
+        emis_sorted = emis.sort_values("co2_por_gwh")
+        cleanest = emis_sorted.iloc[0]
+        dirtiest = emis_sorted.iloc[-1]
+        cleanest_energy = cleanest["Tipo_Energia"]
+        cleanest_ratio = cleanest["co2_por_gwh"]
+        dirtiest_ratio = dirtiest["co2_por_gwh"]
+        improvement_pct = (
+            (dirtiest_ratio - cleanest_ratio) / dirtiest_ratio * 100
+            if dirtiest_ratio > 0
+            else 0
+        )
+    else:
+        cleanest_energy = None
+        cleanest_ratio = None
+        improvement_pct = None
+
+    # Tecnología más económica (costo promedio)
+    costs = df_f.groupby("Tipo_Energia")["Costo_MWh"].mean().sort_values()
+    cheapest_energy = costs.index[0]
+    cheapest_cost = costs.iloc[0]
+
+    summary.update(
+        {
+            "top_gen_energy": top_gen_energy,
+            "top_gen_value": top_gen_value,
+            "top_gen_pct": top_gen_pct,
+            "cleanest_energy": cleanest_energy,
+            "cleanest_ratio": cleanest_ratio,
+            "cleanest_improvement_pct": improvement_pct,
+            "cheapest_energy": cheapest_energy,
+            "cheapest_cost": cheapest_cost,
+        }
+    )
+    return summary
+
+
+def render_text_summary(summary: dict):
+    """Renderiza conclusiones automáticas basadas en las métricas calculadas."""
+    if not summary:
+        return
+
+    st.markdown("### 🧾 Resumen analítico del periodo filtrado")
+
+    bullets = []
+
+    # Generación
+    bullets.append(
+        f"- La fuente con **mayor generación** en el periodo filtrado es "
+        f"**{summary['top_gen_energy']}**, con aproximadamente "
+        f"**{summary['top_gen_value']:,.1f} GWh**, lo que representa cerca del "
+        f"**{summary['top_gen_pct']:.1f}%** de la generación total."
+    )
+
+    # Limpieza
+    if summary.get("cleanest_energy") is not None and summary.get("cleanest_ratio") is not None:
+        if summary.get("cleanest_improvement_pct") is not None:
+            bullets.append(
+                f"- La tecnología **más limpia** es **{summary['cleanest_energy']}**, "
+                f"con alrededor de **{summary['cleanest_ratio']:.2f} ton CO₂/GWh**, "
+                f"lo que supone una mejora aproximada del "
+                f"**{summary['cleanest_improvement_pct']:.1f}%** frente a la fuente más emisora."
+            )
+        else:
+            bullets.append(
+                f"- La tecnología **más limpia** es **{summary['cleanest_energy']}**, "
+                f"con alrededor de **{summary['cleanest_ratio']:.2f} ton CO₂/GWh**."
+            )
+
+    # Costos
+    bullets.append(
+        f"- La fuente con **menor costo promedio** es **{summary['cheapest_energy']}**, "
+        f"con un valor medio cercano a **${summary['cheapest_cost']:.2f} USD/MWh**."
+    )
+
+    st.markdown("\n".join(bullets))
+    st.caption(
+        "Estas conclusiones se calculan dinámicamente con base en los filtros seleccionados "
+        "y representan un escenario sintético de la matriz energética de Colombia."
+    )
+
 def get_filtered_data(df: pd.DataFrame):
     """Aplica filtros comunes y devuelve el dataframe filtrado y los parámetros usados."""
     years = sorted(df['Año'].unique())
@@ -196,9 +299,13 @@ def dashboard():
     kpi4.metric("Cobertura Promedio", f"{df_f['Porcentaje_Cobertura'].mean()*100:.1f}%")
     kpi5.metric("Emisiones CO2", f"{df_f['Emisiones_CO2_toneladas'].sum():,.0f} ton")
     
+    # Resumen analítico automático
+    summary = compute_summary_metrics(df_f)
+    render_text_summary(summary)
+
     st.markdown("---")
     
-    # Sección de Gráficos (Ejemplo de estructura escalable a 30 gráficos)
+    # Sección de Gráficos
     st.subheader("📈 Evolución Temporal")
     
     col_g1, col_g2 = st.columns(2)
