@@ -11,6 +11,9 @@
 
 Aplicación **interactiva** de análisis de la matriz energética de **Colombia**, desarrollada para el curso de **Análisis de Datos de Talento Tech**.  
 
+La versión desplegada en la nube está disponible en:  
+`https://matrizenergeticacolombia-f.streamlit.app/`
+
 Permite explorar y visualizar datos sintéticos de generación de energía renovable (**solar, eólica, hídrica y geotérmica**) para el periodo **2020–2026**, analizando generación, oferta, demanda, costos, inversiones y emisiones de CO₂.
 
 Con esta herramienta se pueden responder preguntas como:
@@ -178,17 +181,9 @@ La aplicación tiene dos vistas principales:
 
 - `load_data()`: carga y valida el dataset desde `datos_energeticos_sinteticos.csv`, asegurando tipos de datos correctos.
 - `show_help(text)`: muestra mensajes de ayuda contextual como bloques informativos.
-- `landing_page()`: construye la página de bienvenida con descripción, tecnologías, objetivos y botón de acceso al dashboard.
-- `dashboard()`: gestiona filtros, KPIs y visualizaciones principales.
+- `landing_page()`: construye la página de bienvenida con descripción, resumen del dataset, objetivos y botón de acceso al dashboard.
+- `dashboard()`: gestiona filtros, KPIs, visualizaciones descriptivas e interactivas (incluyendo análisis avanzados de eficiencia, costos, inversión, cobertura, limpieza y participación).
 - Uso de `st.session_state['show_dashboard']` para navegar entre landing y dashboard sin recargar toda la app.
-
-## 🔮 Mejoras futuras (ideas)
-
-- Agregar más gráficos (heatmaps, scatterplots, pairplots, violinplots) para completar y superar las 30 visualizaciones.
-- Incorporar **Plotly** para gráficos 100% interactivos.
-- Cargar datos reales de fuentes oficiales (UPME, XM, IDEAM, etc.).
-- Descarga de reportes en PDF/Excel con los gráficos y KPIs seleccionados.
-- Internacionalización (ES/EN).
 
 ## 📄 Licencia
 
