@@ -175,17 +175,20 @@ def get_filtered_data(df: pd.DataFrame):
     min_inv, max_inv = float(df['Inversion_USD_millones'].min()), float(df['Inversion_USD_millones'].max())
 
     with st.sidebar.expander("⚙️ Filtros detallados", expanded=True):
-        selected_years = st.multiselect("📅 Años:", options=years, default=years, key="years_filter")
+        selected_years = st.multiselect("📅 Años (periodo de análisis)", options=years, default=years, key="years_filter")
+        st.caption("Escoge uno o varios años para enfocar el análisis temporal.")
 
-        selected_energy = st.multiselect("⚡ Tipo de Energía:", options=energy_types, default=energy_types, key="energy_filter")
+        selected_energy = st.multiselect("⚡ Tipo de Energía (fuentes a comparar)", options=energy_types, default=energy_types, key="energy_filter")
+        st.caption("Selecciona las tecnologías que deseas analizar de forma conjunta o individual.")
 
         selected_inv = st.slider(
-            "💰 Inversión (Millones USD):",
+            "💰 Inversión (rango de proyectos en Millones USD)",
             min_value=min_inv,
             max_value=max_inv,
             value=(min_inv, max_inv),
             key="inv_filter",
         )
+        st.caption("Restringe el análisis a proyectos dentro de este rango de inversión simulada.")
 
     df_f = df[
         (df['Año'].isin(selected_years)) &
@@ -335,6 +338,16 @@ def dashboard():
         return
 
     st.title(t["dashboard_title"])
+
+    # Sugerencia de uso del panel
+    st.markdown("""
+**Cómo leer este panel**
+
+1. Comienza con los **KPIs** y el **resumen analítico** para tener una visión ejecutiva del escenario actual.
+2. Explora la sección de **Evolución temporal** para entender las tendencias año a año.
+3. Usa **Distribución y comparativa** para analizar la mezcla de fuentes y su estructura de costos.
+4. Si necesitas mayor detalle, despliega el bloque de **Análisis avanzado** para profundizar en eficiencia, costos, inversión, cobertura y emisiones.
+""")
 
     # Línea de estado de filtros activos y escenario
     escenario = st.session_state.get(
