@@ -297,7 +297,7 @@ def dashboard():
             st.session_state["years_filter"] = [min(years_all), max(years_all)]
             st.session_state["energy_filter"] = energy_all
             st.session_state["inv_filter"] = (min_inv, max_inv)
-            st.experimental_rerun()
+            st.rerun()
     with col_s2:
         if st.button("Alta inversión"):
             st.session_state["years_filter"] = years_all
@@ -305,7 +305,7 @@ def dashboard():
             # Top 25% de inversión
             inv_threshold = df["Inversion_USD_millones"].quantile(0.75)
             st.session_state["inv_filter"] = (float(inv_threshold), max_inv)
-            st.experimental_rerun()
+            st.rerun()
 
     if st.sidebar.button("Solo renovables más limpias"):
         # Priorizar tecnologías con menor CO2/GWh dentro del propio dataset
@@ -321,7 +321,7 @@ def dashboard():
             st.session_state["energy_filter"] = clean_types
         st.session_state["years_filter"] = years_all
         st.session_state["inv_filter"] = (min_inv, max_inv)
-        st.experimental_rerun()
+        st.rerun()
 
     # Filtros reutilizables
     df_f, selected_years, selected_energy, selected_inv = get_filtered_data(df)
