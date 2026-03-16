@@ -268,18 +268,9 @@ def dashboard():
     # Selección de idioma básica
     lang = st.sidebar.selectbox("Idioma / Language", ["ES", "EN"], index=0, key="lang")
 
-    # Modo de visualización
-    view_mode = st.sidebar.radio(
-        "Modo de visualización",
-        options=["Básico", "Avanzado"],
-        index=0,
-        key="view_mode",
-        help="El modo básico muestra los elementos esenciales. El modo avanzado añade análisis detallado.",
-    )
-
     texts = {
         "ES": {
-            "filters_title": "🔍 Filtros de Análisis",
+            "filters_title": "🔍 Configura tu escenario",
             "dashboard_title": "📊 Panel de Control Energético",
             "no_data": "⚠️ No hay datos con los filtros seleccionados. Por favor ajusta los filtros.",
             "downloads_title": "📥 Descarga de datos filtrados",
@@ -288,7 +279,7 @@ def dashboard():
             "quick_scenarios": "🎛️ Escenarios rápidos",
         },
         "EN": {
-            "filters_title": "🔍 Analysis Filters",
+            "filters_title": "🔍 Configure your scenario",
             "dashboard_title": "📊 Energy Control Panel",
             "no_data": "⚠️ No data for the selected filters. Please adjust them.",
             "downloads_title": "📥 Download filtered data",
@@ -314,31 +305,27 @@ def dashboard():
             st.session_state["years_filter"] = [min(years_all), max(years_all)]
             st.session_state["energy_filter"] = energy_all
             st.session_state["inv_filter"] = (min_inv, max_inv)
+            st.session_state["scenario_label"] = "Escenario actual: comparación de extremos 2020 vs 2026."
+            st.success("Escenario '2020 vs 2026' aplicado.")
             st.rerun()
     with col_s2:
-        if st.button("Alta inversión"):
+        if st.button("Fuentes más limpias"):
             st.session_state["years_filter"] = years_all
-            st.session_state["energy_filter"] = energy_all
-            # Top 25% de inversión
-            inv_threshold = df["Inversion_USD_millones"].quantile(0.75)
-            st.session_state["inv_filter"] = (float(inv_threshold), max_inv)
+            # Priorizar tecnologías con menor CO2/GWh dentro del propio dataset
+            tmp = (
+                df.groupby("Tipo_Energia")[["Emisiones_CO2_toneladas", "Generacion_GWh"]]
+                .sum()
+                .reset_index()
+            )
+            tmp = tmp[tmp["Generacion_GWh"] > 0].copy()
+            if not tmp.empty:
+                tmp["co2_por_gwh"] = tmp["Emisiones_CO2_toneladas"] / tmp["Generacion_GWh"]
+                clean_types = tmp.sort_values("co2_por_gwh")["Tipo_Energia"].head(2).tolist()
+                st.session_state["energy_filter"] = clean_types
+            st.session_state["inv_filter"] = (min_inv, max_inv)
+            st.session_state["scenario_label"] = "Escenario actual: énfasis en las fuentes más limpias (menor CO₂/GWh)."
+            st.success("Escenario 'Fuentes más limpias' aplicado.")
             st.rerun()
-
-    if st.sidebar.button("Solo renovables más limpias"):
-        # Priorizar tecnologías con menor CO2/GWh dentro del propio dataset
-        tmp = (
-            df.groupby("Tipo_Energia")[["Emisiones_CO2_toneladas", "Generacion_GWh"]]
-            .sum()
-            .reset_index()
-        )
-        tmp = tmp[tmp["Generacion_GWh"] > 0].copy()
-        if not tmp.empty:
-            tmp["co2_por_gwh"] = tmp["Emisiones_CO2_toneladas"] / tmp["Generacion_GWh"]
-            clean_types = tmp.sort_values("co2_por_gwh")["Tipo_Energia"].head(2).tolist()
-            st.session_state["energy_filter"] = clean_types
-        st.session_state["years_filter"] = years_all
-        st.session_state["inv_filter"] = (min_inv, max_inv)
-        st.rerun()
 
     # Filtros reutilizables
     df_f, selected_years, selected_energy, selected_inv = get_filtered_data(df)
@@ -348,7 +335,20 @@ def dashboard():
         return
 
     st.title(t["dashboard_title"])
-    
+
+    # Línea de estado de filtros activos y escenario
+    escenario = st.session_state.get(
+        "scenario_label",
+        "Escenario actual: filtros personalizados sin preset predefinido."
+    )
+    st.markdown(
+        f"{escenario}<br>"
+        f"**Contexto de datos:** analizando **{', '.join(sorted(df_f['Tipo_Energia'].unique()))}** "
+        f"entre los años **{min(df_f['Año'])}–{max(df_f['Año'])}**, "
+        f"con inversiones entre **{df_f['Inversion_USD_millones'].min():,.1f}–{df_f['Inversion_USD_millones'].max():,.1f} MUSD**.",
+        unsafe_allow_html=True,
+    )
+
     # KPIs
     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
     kpi1.metric("Generación Total", f"{df_f['Generacion_GWh'].sum():,.1f} GWh")
@@ -463,9 +463,9 @@ def dashboard():
             "Los colores más intensos indican mayor generación (GWh) en el año seleccionado.",
         )
 
-    # Sección de análisis avanzado alineado con consultas SQL (solo en modo avanzado)
-    if view_mode == "Avanzado":
-        st.markdown("---")
+    # Sección de análisis avanzado alineado con consultas SQL (siempre disponible, pero separado visualmente)
+    st.markdown("---")
+    with st.expander("🔬 Análisis avanzado de la matriz energética (opcional)", expanded=False):
         st.subheader("📊 Análisis avanzado de la matriz energética")
 
         adv_tab1, adv_tab2, adv_tab3, adv_tab4, adv_tab5 = st.tabs(
@@ -478,376 +478,441 @@ def dashboard():
             ]
         )
 
-    # 1) Totales y promedios por tipo de energía y año (4 gráficos)
-    with adv_tab1:
-        st.markdown("### Totales y promedios por tipo de energía y año")
-        grouped = (
-            df_f.groupby(["Año", "Tipo_Energia"])
-            .agg(
-                total_generacion_gwh=("Generacion_GWh", "sum"),
-                total_oferta_gwh=("Oferta_GWh", "sum"),
-                total_demanda_gwh=("Demanda_GWh", "sum"),
-                promedio_costo_mwh=("Costo_MWh", "mean"),
-                promedio_cobertura=("Porcentaje_Cobertura", "mean"),
-                total_inversion_usd_millones=("Inversion_USD_millones", "sum"),
-                total_emisiones_co2=("Emisiones_CO2_toneladas", "sum"),
+        # 1) Totales y promedios por tipo de energía y año (4 gráficos)
+        with adv_tab1:
+            st.markdown("### Totales y promedios por tipo de energía y año")
+            grouped = (
+                df_f.groupby(["Año", "Tipo_Energia"])
+                .agg(
+                    total_generacion_gwh=("Generacion_GWh", "sum"),
+                    total_oferta_gwh=("Oferta_GWh", "sum"),
+                    total_demanda_gwh=("Demanda_GWh", "sum"),
+                    promedio_costo_mwh=("Costo_MWh", "mean"),
+                    promedio_cobertura=("Porcentaje_Cobertura", "mean"),
+                    total_inversion_usd_millones=("Inversion_USD_millones", "sum"),
+                    total_emisiones_co2=("Emisiones_CO2_toneladas", "sum"),
+                )
+                .reset_index()
             )
-            .reset_index()
-        )
 
-        c1, c2 = st.columns(2)
-        with c1:
+            c1, c2 = st.columns(2)
+            with c1:
+                fig = px.bar(
+                    grouped,
+                    x="Año",
+                    y="total_generacion_gwh",
+                    color="Tipo_Energia",
+                    title="Generación total por año y tipo de energía",
+                    color_discrete_map=ENERGY_COLOR_MAP,
+                )
+                plotly_with_help(
+                    fig,
+                    "Muestra: generación total anual agregada por tipo de energía.\n"
+                    "Cómo leerlo: compara la altura de las barras por año y fuente.\n"
+                    "Útil para: entender qué tecnologías aportan más volumen en cada periodo.",
+                )
+
+            with c2:
+                fig = px.bar(
+                    grouped,
+                    x="Año",
+                    y="total_demanda_gwh",
+                    color="Tipo_Energia",
+                    title="Demanda total por año y tipo de energía",
+                    color_discrete_map=ENERGY_COLOR_MAP,
+                )
+                plotly_with_help(
+                    fig,
+                    "Muestra: demanda total (GWh) por año y fuente.\n"
+                    "Cómo leerlo: observa qué fuentes concentran mayor demanda agregada.\n"
+                    "Útil para: contrastar demanda atendida entre tecnologías.",
+                )
+
+            c3, c4 = st.columns(2)
+            with c3:
+                fig = px.line(
+                    grouped,
+                    x="Año",
+                    y="promedio_costo_mwh",
+                    color="Tipo_Energia",
+                    markers=True,
+                    title="Costo promedio por MWh a lo largo del tiempo",
+                    color_discrete_map=ENERGY_COLOR_MAP,
+                )
+                plotly_with_help(
+                    fig,
+                    "Muestra: costo medio (USD/MWh) por año y tecnología.\n"
+                    "Cómo leerlo: sigue la trayectoria de cada línea para ver si los costos suben o bajan.\n"
+                    "Útil para: evaluar competitividad económica relativa en el tiempo.",
+                )
+
+            with c4:
+                fig = px.line(
+                    grouped,
+                    x="Año",
+                    y="promedio_cobertura",
+                    color="Tipo_Energia",
+                    markers=True,
+                    title="Cobertura promedio por tipo de energía",
+                    color_discrete_map=ENERGY_COLOR_MAP,
+                )
+                plotly_with_help(
+                    fig,
+                    "Muestra: cobertura media (proporción de demanda cubierta) por tecnología.\n"
+                    "Cómo leerlo: líneas más altas implican mejor desempeño de cobertura.\n"
+                    "Útil para: identificar fuentes que sostienen mejor la demanda.",
+                )
+
+            # Conclusión breve de la pestaña
+            top_year = grouped.groupby("Año")["total_generacion_gwh"].sum().idxmax()
+            st.markdown(
+                f"**Conclusión rápida:** en el periodo filtrado, el año con mayor generación total simulada es "
+                f"**{top_year}**, lo que sugiere un pico de actividad energética en dicho año bajo este escenario."
+            )
+
+        # 2) Eficiencia energética (3 gráficos)
+        with adv_tab2:
+            st.markdown("### Eficiencia energética (generación vs demanda)")
+            eff = (
+                df_f.groupby("Tipo_Energia")[["Generacion_GWh", "Demanda_GWh"]]
+                .sum()
+                .reset_index()
+            )
+            eff["eficiencia_energetica"] = eff["Generacion_GWh"] / eff["Demanda_GWh"]
+
             fig = px.bar(
-                grouped,
-                x="Año",
-                y="total_generacion_gwh",
+                eff,
+                x="Tipo_Energia",
+                y="eficiencia_energetica",
+                title="Eficiencia energética por tipo de energía",
+                text="eficiencia_energetica",
                 color="Tipo_Energia",
-                title="Generación total por año y tipo de energía",
+                color_discrete_map=ENERGY_COLOR_MAP,
             )
             plotly_with_help(
                 fig,
-                "Compara la generación total (GWh) anual por fuente. Útil para ver qué energía domina en cada periodo.",
+                "Muestra: relación Generación/Demanda agregada por tecnología.\n"
+                "Cómo leerlo: barras más altas indican mayor eficiencia relativa.\n"
+                "Útil para: priorizar fuentes que responden mejor a la demanda total.",
             )
 
-        with c2:
+            fig2 = px.scatter(
+                eff,
+                x="Demanda_GWh",
+                y="Generacion_GWh",
+                color="Tipo_Energia",
+                size="Generacion_GWh",
+                title="Relación generación vs demanda por tipo de energía",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig2,
+                "Muestra: comparación entre demanda y generación agregadas.\n"
+                "Cómo leerlo: puntos cercanos a la diagonal implican equilibrio; alejados sugieren desbalance.\n"
+                "Útil para: detectar tecnologías con sobreoferta o déficit estructural.",
+            )
+
+            fig3 = px.bar(
+                eff.sort_values("Generacion_GWh", ascending=False),
+                x="Tipo_Energia",
+                y="Generacion_GWh",
+                title="Ranking de generación total por tipo de energía",
+                color="Tipo_Energia",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig3,
+                "Muestra: ranking de generación total (GWh) por tecnología.\n"
+                "Cómo leerlo: la barra más alta corresponde a la fuente dominante en generación.\n"
+                "Útil para: identificar líderes y seguidores en el mix energético.",
+            )
+
+            # Conclusión breve de la pestaña
+            best_eff = eff.sort_values("eficiencia_energetica", ascending=False).iloc[0]
+            st.markdown(
+                f"**Conclusión rápida:** la fuente con mejor relación generación/demanda en el escenario actual es "
+                f"**{best_eff['Tipo_Energia']}**, con una eficiencia aproximada de "
+                f"**{best_eff['eficiencia_energetica']:.2f}**."
+            )
+
+        # 3) Análisis de costos de generación (4 gráficos)
+        with adv_tab3:
+            st.markdown("### Análisis de costos de generación")
+            cost = (
+                df_f.groupby("Tipo_Energia")["Costo_MWh"]
+                .agg(["mean", "min", "max"])
+                .reset_index()
+                .rename(columns={"mean": "promedio", "min": "minimo", "max": "maximo"})
+            )
+
             fig = px.bar(
-                grouped,
-                x="Año",
-                y="total_demanda_gwh",
+                cost,
+                x="Tipo_Energia",
+                y="promedio",
+                error_y=cost["maximo"] - cost["promedio"],
+                error_y_minus=cost["promedio"] - cost["minimo"],
+                title="Costo promedio por MWh con rango mínimo-máximo",
                 color="Tipo_Energia",
-                title="Demanda total por año y tipo de energía",
+                color_discrete_map=ENERGY_COLOR_MAP,
             )
             plotly_with_help(
                 fig,
-                "Visualiza la demanda total (GWh) por año y fuente. Permite contrastar comportamientos de demanda por tecnología.",
+                "Muestra: costo medio (USD/MWh) y rango mínimo–máximo por tecnología.\n"
+                "Cómo leerlo: observa tanto el valor central como la extensión de los errores.\n"
+                "Útil para: evaluar estabilidad y competitividad de costos.",
             )
 
-        c3, c4 = st.columns(2)
-        with c3:
-            fig = px.line(
-                grouped,
-                x="Año",
-                y="promedio_costo_mwh",
+            fig2 = px.box(
+                df_f,
+                x="Tipo_Energia",
+                y="Costo_MWh",
+                points="all",
+                title="Distribución detallada de costos por tipo de energía",
                 color="Tipo_Energia",
-                markers=True,
-                title="Costo promedio por MWh a lo largo del tiempo",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig2,
+                "Muestra: distribución completa de costos por registro.\n"
+                "Cómo leerlo: cajas muestran mediana y cuartiles; puntos exponen valores atípicos.\n"
+                "Útil para: detectar dispersiones y outliers en costos.",
+            )
+
+            fig3 = px.violin(
+                df_f,
+                x="Tipo_Energia",
+                y="Costo_MWh",
+                box=True,
+                points="all",
+                title="Violin plot de costos por MWh",
+                color="Tipo_Energia",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig3,
+                "Muestra: densidad de probabilidades de los costos por tecnología.\n"
+                "Cómo leerlo: violines más anchos indican rangos donde se concentran más observaciones.\n"
+                "Útil para: comparar la forma de las distribuciones de costos.",
+            )
+
+            fig4 = px.scatter(
+                df_f,
+                x="Generacion_GWh",
+                y="Costo_MWh",
+                color="Tipo_Energia",
+                hover_data=["Año"],
+                title="Costo vs generación por registro",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig4,
+                "Muestra: pares generación–costo por registro.\n"
+                "Cómo leerlo: busca patrones de menor costo asociado a mayor generación.\n"
+                "Útil para: identificar posibles economías de escala o ineficiencias.",
+            )
+
+            # Conclusión breve de la pestaña
+            cheapest = cost.sort_values("promedio").iloc[0]
+            st.markdown(
+                f"**Conclusión rápida:** la tecnología con **menor costo promedio** en el periodo filtrado es "
+                f"**{cheapest['Tipo_Energia']}**, con un costo medio cercano a **${cheapest['promedio']:.2f} USD/MWh**."
+            )
+
+        # 4) Retorno de inversión energética (4 gráficos)
+        with adv_tab4:
+            st.markdown("### Retorno de inversión energética")
+            inv = (
+                df_f.groupby("Tipo_Energia")[["Generacion_GWh", "Demanda_GWh", "Inversion_USD_millones"]]
+                .sum()
+                .reset_index()
+            )
+            inv["generacion_por_dolar"] = inv["Generacion_GWh"] / inv["Inversion_USD_millones"]
+            inv["demanda_por_dolar"] = inv["Demanda_GWh"] / inv["Inversion_USD_millones"]
+
+            fig = px.bar(
+                inv.sort_values("generacion_por_dolar", ascending=False),
+                x="Tipo_Energia",
+                y="generacion_por_dolar",
+                title="Generación (GWh) por millón de USD invertido",
+                color="Tipo_Energia",
+                color_discrete_map=ENERGY_COLOR_MAP,
             )
             plotly_with_help(
                 fig,
-                "Observa cómo cambia el costo medio (USD/MWh) por tecnología a lo largo del tiempo. "
-                "Ayuda a detectar tendencias de competitividad.",
+                "Muestra: generación obtenida por millón de USD invertido.\n"
+                "Cómo leerlo: barras más altas indican mejor retorno energético del capital.\n"
+                "Útil para: priorizar inversiones en tecnologías más eficientes en términos de energía/capital.",
             )
 
-        with c4:
-            fig = px.line(
-                grouped,
-                x="Año",
-                y="promedio_cobertura",
+            fig2 = px.bar(
+                inv.sort_values("Inversion_USD_millones", ascending=False),
+                x="Tipo_Energia",
+                y="Inversion_USD_millones",
+                title="Inversión total por tipo de energía",
                 color="Tipo_Energia",
-                markers=True,
-                title="Cobertura promedio por tipo de energía",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig2,
+                "Muestra: volumen total de inversión por tecnología.\n"
+                "Cómo leerlo: observa qué fuentes concentran la mayor parte del capital.\n"
+                "Útil para: comparar apuesta de inversión frente a resultados de generación.",
+            )
+
+            fig3 = px.scatter(
+                inv,
+                x="Inversion_USD_millones",
+                y="Generacion_GWh",
+                color="Tipo_Energia",
+                size="Generacion_GWh",
+                title="Relación inversión vs generación total",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig3,
+                "Muestra: relación entre inversión acumulada y generación total.\n"
+                "Cómo leerlo: puntos más altos a la derecha sugieren altos niveles de inversión y generación.\n"
+                "Útil para: verificar si las inversiones se traducen en resultados energéticos.",
+            )
+
+            fig4 = px.scatter(
+                inv,
+                x="Inversion_USD_millones",
+                y="Demanda_GWh",
+                color="Tipo_Energia",
+                size="Demanda_GWh",
+                title="Relación inversión vs demanda total",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig4,
+                "Muestra: cómo se correlaciona la inversión con la demanda agregada atendida.\n"
+                "Cómo leerlo: compara tecnologías con mucha demanda frente a la inversión que reciben.\n"
+                "Útil para: detectar posibles desbalances inversión–demanda.",
+            )
+
+            # Conclusión breve de la pestaña
+            best_roi = inv.sort_values("generacion_por_dolar", ascending=False).iloc[0]
+            st.markdown(
+                f"**Conclusión rápida:** según el indicador de **generación por millón de USD**, la fuente con mejor retorno "
+                f"de inversión simulada es **{best_roi['Tipo_Energia']}**, con aproximadamente "
+                f"**{best_roi['generacion_por_dolar']:.2f} GWh/MUSD**."
+            )
+
+        # 5) Cobertura, limpieza y participación (5 gráficos)
+        with adv_tab5:
+            st.markdown("### Cobertura, limpieza y participación en la matriz")
+
+            cov = (
+                df_f.groupby(["Año", "Tipo_Energia"])["Porcentaje_Cobertura"]
+                .mean()
+                .reset_index()
+            )
+            cov["Cobertura_pct"] = cov["Porcentaje_Cobertura"] * 100
+
+            fig = px.bar(
+                cov,
+                x="Año",
+                y="Cobertura_pct",
+                color="Tipo_Energia",
+                title="Cobertura promedio (%) por año y tipo de energía",
+                color_discrete_map=ENERGY_COLOR_MAP,
             )
             plotly_with_help(
                 fig,
-                "Mide el aporte relativo de cobertura por tecnología en el tiempo. Valores mayores sugieren mejor capacidad de cubrir demanda.",
+                "Muestra: nivel promedio de cobertura (%) por año y tecnología.\n"
+                "Cómo leerlo: barras más altas implican mejor capacidad de cubrir la demanda.\n"
+                "Útil para: comparar desempeño de cobertura a lo largo del tiempo.",
             )
 
-        # Conclusión breve de la pestaña
-        top_year = grouped.groupby("Año")["total_generacion_gwh"].sum().idxmax()
-        st.markdown(
-            f"**Conclusión rápida:** en el periodo filtrado, el año con mayor generación total simulada es "
-            f"**{top_year}**, lo que sugiere un pico de actividad energética en dicho año bajo este escenario."
-        )
+            emis = (
+                df_f.groupby("Tipo_Energia")[["Emisiones_CO2_toneladas", "Generacion_GWh"]]
+                .sum()
+                .reset_index()
+            )
+            emis["co2_por_gwh"] = emis["Emisiones_CO2_toneladas"] / emis["Generacion_GWh"]
 
-    # 2) Eficiencia energética (3 gráficos)
-    with adv_tab2:
-        st.markdown("### Eficiencia energética (generación vs demanda)")
-        eff = (
-            df_f.groupby("Tipo_Energia")[["Generacion_GWh", "Demanda_GWh"]]
-            .sum()
-            .reset_index()
-        )
-        eff["eficiencia_energetica"] = eff["Generacion_GWh"] / eff["Demanda_GWh"]
+            fig2 = px.bar(
+                emis.sort_values("co2_por_gwh"),
+                x="Tipo_Energia",
+                y="co2_por_gwh",
+                title="Ranking de energías más limpias (ton CO₂ / GWh)",
+                color="Tipo_Energia",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig2,
+                "Muestra: emisiones relativas (ton CO₂/GWh) por tecnología.\n"
+                "Cómo leerlo: barras más bajas significan fuentes más limpias.\n"
+                "Útil para: priorizar tecnologías con menor huella de carbono por unidad de energía.",
+            )
 
-        fig = px.bar(
-            eff,
-            x="Tipo_Energia",
-            y="eficiencia_energetica",
-            title="Eficiencia energética por tipo de energía",
-            text="eficiencia_energetica",
-        )
-        plotly_with_help(
-            fig,
-            "Eficiencia aproximada como Generación/Demanda. Valores más altos indican mayor capacidad de respuesta frente a la demanda agregada.",
-        )
+            total_gen = emis["Generacion_GWh"].sum()
+            emis["participacion_pct"] = emis["Generacion_GWh"] / total_gen * 100
 
-        fig2 = px.scatter(
-            eff,
-            x="Demanda_GWh",
-            y="Generacion_GWh",
-            color="Tipo_Energia",
-            size="Generacion_GWh",
-            title="Relación generación vs demanda por tipo de energía",
-        )
-        plotly_with_help(
-            fig2,
-            "Compara generación y demanda agregadas por tecnología. "
-            "Puntos alejados de la diagonal sugieren desbalances relativos entre lo demandado y lo generado.",
-        )
+            fig3 = px.pie(
+                emis,
+                names="Tipo_Energia",
+                values="participacion_pct",
+                title="Participación en la matriz energética (%)",
+                color="Tipo_Energia",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig3,
+                "Muestra: peso porcentual de cada fuente en la generación total.\n"
+                "Cómo leerlo: secciones más grandes representan mayor participación.\n"
+                "Útil para: entender la composición de la matriz energética.",
+            )
 
-        fig3 = px.bar(
-            eff.sort_values("Generacion_GWh", ascending=False),
-            x="Tipo_Energia",
-            y="Generacion_GWh",
-            title="Ranking de generación total por tipo de energía",
-        )
-        plotly_with_help(
-            fig3,
-            "Ranking de aporte total de generación (GWh) por fuente en el periodo filtrado.",
-        )
+            fig4 = px.scatter(
+                emis,
+                x="co2_por_gwh",
+                y="participacion_pct",
+                color="Tipo_Energia",
+                size="Generacion_GWh",
+                title="Limpieza vs participación en la matriz",
+                color_discrete_map=ENERGY_COLOR_MAP,
+            )
+            plotly_with_help(
+                fig4,
+                "Muestra: relación entre limpieza (CO₂/GWh) y participación (%).\n"
+                "Cómo leerlo: puntos hacia abajo y a la izquierda son más limpios y menos dominantes, hacia arriba y a la derecha más intensivos y relevantes.\n"
+                "Útil para: identificar oportunidades de reemplazo de tecnologías emisoras por alternativas más limpias.",
+            )
 
-        # Conclusión breve de la pestaña
-        best_eff = eff.sort_values("eficiencia_energetica", ascending=False).iloc[0]
-        st.markdown(
-            f"**Conclusión rápida:** la fuente con mejor relación generación/demanda en el escenario actual es "
-            f"**{best_eff['Tipo_Energia']}**, con una eficiencia aproximada de "
-            f"**{best_eff['eficiencia_energetica']:.2f}**."
-        )
+            cov_level = cov.copy()
+            cov_level["nivel_cobertura"] = pd.cut(
+                cov_level["Porcentaje_Cobertura"],
+                bins=[0, 0.5, 0.8, 1.0],
+                labels=["BAJA", "MEDIA", "ALTA"],
+                include_lowest=True,
+            )
 
-    # 3) Análisis de costos de generación (4 gráficos)
-    with adv_tab3:
-        st.markdown("### Análisis de costos de generación")
-        cost = (
-            df_f.groupby("Tipo_Energia")["Costo_MWh"]
-            .agg(["mean", "min", "max"])
-            .reset_index()
-            .rename(columns={"mean": "promedio", "min": "minimo", "max": "maximo"})
-        )
+            fig5 = px.histogram(
+                cov_level,
+                x="Año",
+                color="nivel_cobertura",
+                barmode="group",
+                title="Distribución de niveles de cobertura por año",
+            )
+            plotly_with_help(
+                fig5,
+                "Muestra: cómo se distribuyen los niveles de cobertura (BAJA/MEDIA/ALTA) por año.\n"
+                "Cómo leerlo: barras altas en 'ALTA' implican años con buen desempeño de cobertura.\n"
+                "Útil para: evaluar estabilidad y mejora/deterioro de la cobertura en el tiempo.",
+            )
 
-        fig = px.bar(
-            cost,
-            x="Tipo_Energia",
-            y="promedio",
-            error_y=cost["maximo"] - cost["promedio"],
-            error_y_minus=cost["promedio"] - cost["minimo"],
-            title="Costo promedio por MWh con rango mínimo-máximo",
-        )
-        plotly_with_help(
-            fig,
-            "Compara el costo promedio por tecnología y su variabilidad (mín–máx). Útil para evaluar estabilidad de costos.",
-        )
-
-        fig2 = px.box(
-            df_f,
-            x="Tipo_Energia",
-            y="Costo_MWh",
-            points="all",
-            title="Distribución detallada de costos por tipo de energía",
-        )
-        plotly_with_help(
-            fig2,
-            "Distribución de costos por tecnología (mediana, cuartiles y dispersión). Los puntos muestran observaciones individuales.",
-        )
-
-        fig3 = px.violin(
-            df_f,
-            x="Tipo_Energia",
-            y="Costo_MWh",
-            box=True,
-            points="all",
-            title="Violin plot de costos por MWh",
-        )
-        plotly_with_help(
-            fig3,
-            "Muestra la densidad de costos por tecnología. Útil para comparar formas de distribución (concentración y colas).",
-        )
-
-        fig4 = px.scatter(
-            df_f,
-            x="Generacion_GWh",
-            y="Costo_MWh",
-            color="Tipo_Energia",
-            hover_data=["Año"],
-            title="Costo vs generación por registro",
-        )
-        plotly_with_help(
-            fig4,
-            "Relación entre generación (GWh) y costo (USD/MWh) por registro. Ayuda a identificar economías de escala o outliers.",
-        )
-
-        # Conclusión breve de la pestaña
-        cheapest = cost.sort_values("promedio").iloc[0]
-        st.markdown(
-            f"**Conclusión rápida:** la tecnología con **menor costo promedio** en el periodo filtrado es "
-            f"**{cheapest['Tipo_Energia']}**, con un costo medio cercano a **${cheapest['promedio']:.2f} USD/MWh**."
-        )
-
-    # 4) Retorno de inversión energética (4 gráficos)
-    with adv_tab4:
-        st.markdown("### Retorno de inversión energética")
-        inv = (
-            df_f.groupby("Tipo_Energia")[["Generacion_GWh", "Demanda_GWh", "Inversion_USD_millones"]]
-            .sum()
-            .reset_index()
-        )
-        inv["generacion_por_dolar"] = inv["Generacion_GWh"] / inv["Inversion_USD_millones"]
-        inv["demanda_por_dolar"] = inv["Demanda_GWh"] / inv["Inversion_USD_millones"]
-
-        fig = px.bar(
-            inv.sort_values("generacion_por_dolar", ascending=False),
-            x="Tipo_Energia",
-            y="generacion_por_dolar",
-            title="Generación (GWh) por millón de USD invertido",
-        )
-        plotly_with_help(
-            fig,
-            "Indicador de retorno: cuánta generación se obtiene por cada millón de USD invertido. Útil para comparar eficiencia de capital.",
-        )
-
-        fig2 = px.bar(
-            inv.sort_values("Inversion_USD_millones", ascending=False),
-            x="Tipo_Energia",
-            y="Inversion_USD_millones",
-            title="Inversión total por tipo de energía",
-        )
-        plotly_with_help(
-            fig2,
-            "Muestra dónde se concentra el capital (Millones USD). Permite comparar apuesta de inversión vs resultados energéticos.",
-        )
-
-        fig3 = px.scatter(
-            inv,
-            x="Inversion_USD_millones",
-            y="Generacion_GWh",
-            color="Tipo_Energia",
-            size="Generacion_GWh",
-            title="Relación inversión vs generación total",
-        )
-        plotly_with_help(
-            fig3,
-            "Evalúa si mayor inversión se traduce en mayor generación total por tecnología.",
-        )
-
-        fig4 = px.scatter(
-            inv,
-            x="Inversion_USD_millones",
-            y="Demanda_GWh",
-            color="Tipo_Energia",
-            size="Demanda_GWh",
-            title="Relación inversión vs demanda total",
-        )
-        plotly_with_help(
-            fig4,
-            "Relaciona inversión con demanda agregada atendida. Ayuda a entender si el capital se dirige a fuentes con mayor demanda.",
-        )
-
-        # Conclusión breve de la pestaña
-        best_roi = inv.sort_values("generacion_por_dolar", ascending=False).iloc[0]
-        st.markdown(
-            f"**Conclusión rápida:** según el indicador de **generación por millón de USD**, la fuente con mejor retorno "
-            f"de inversión simulada es **{best_roi['Tipo_Energia']}**, con aproximadamente "
-            f"**{best_roi['generacion_por_dolar']:.2f} GWh/MUSD**."
-        )
-
-    # 5) Cobertura, limpieza y participación (5 gráficos)
-    with adv_tab5:
-        st.markdown("### Cobertura, limpieza y participación en la matriz")
-
-        cov = (
-            df_f.groupby(["Año", "Tipo_Energia"])["Porcentaje_Cobertura"]
-            .mean()
-            .reset_index()
-        )
-        cov["Cobertura_pct"] = cov["Porcentaje_Cobertura"] * 100
-
-        fig = px.bar(
-            cov,
-            x="Año",
-            y="Cobertura_pct",
-            color="Tipo_Energia",
-            title="Cobertura promedio (%) por año y tipo de energía",
-        )
-        plotly_with_help(
-            fig,
-            "Comparación de cobertura promedio (%). Útil para identificar tecnologías con mejor desempeño en cobertura por año.",
-        )
-
-        emis = (
-            df_f.groupby("Tipo_Energia")[["Emisiones_CO2_toneladas", "Generacion_GWh"]]
-            .sum()
-            .reset_index()
-        )
-        emis["co2_por_gwh"] = emis["Emisiones_CO2_toneladas"] / emis["Generacion_GWh"]
-
-        fig2 = px.bar(
-            emis.sort_values("co2_por_gwh"),
-            x="Tipo_Energia",
-            y="co2_por_gwh",
-            title="Ranking de energías más limpias (ton CO₂ / GWh)",
-        )
-        plotly_with_help(
-            fig2,
-            "Ranking de limpieza: emisiones relativas por energía generada (ton CO₂/GWh). Menor es mejor.",
-        )
-
-        total_gen = emis["Generacion_GWh"].sum()
-        emis["participacion_pct"] = emis["Generacion_GWh"] / total_gen * 100
-
-        fig3 = px.pie(
-            emis,
-            names="Tipo_Energia",
-            values="participacion_pct",
-            title="Participación en la matriz energética (%)",
-        )
-        plotly_with_help(
-            fig3,
-            "Distribución del aporte de cada fuente a la generación total del periodo filtrado (participación %).",
-        )
-
-        fig4 = px.scatter(
-            emis,
-            x="co2_por_gwh",
-            y="participacion_pct",
-            color="Tipo_Energia",
-            size="Generacion_GWh",
-            title="Limpieza vs participación en la matriz",
-        )
-        plotly_with_help(
-            fig4,
-            "Cruza sostenibilidad (CO₂/GWh) vs relevancia (participación %). "
-            "Permite identificar fuentes limpias con alto impacto en la matriz.",
-        )
-
-        cov_level = cov.copy()
-        cov_level["nivel_cobertura"] = pd.cut(
-            cov_level["Porcentaje_Cobertura"],
-            bins=[0, 0.5, 0.8, 1.0],
-            labels=["BAJA", "MEDIA", "ALTA"],
-            include_lowest=True,
-        )
-
-        fig5 = px.histogram(
-            cov_level,
-            x="Año",
-            color="nivel_cobertura",
-            barmode="group",
-            title="Distribución de niveles de cobertura por año",
-        )
-        plotly_with_help(
-            fig5,
-            "Clasifica la cobertura en BAJA/MEDIA/ALTA y muestra su distribución anual. Útil para evaluar consistencia de cobertura.",
-        )
-
-        # Conclusión breve de la pestaña
-        avg_cov = cov.groupby("Tipo_Energia")["Cobertura_pct"].mean().sort_values(ascending=False)
-        top_cov_energy = avg_cov.index[0]
-        top_cov_value = avg_cov.iloc[0]
-        cleanest_row = emis.sort_values("co2_por_gwh").iloc[0]
-        st.markdown(
-            f"**Conclusión rápida:** en términos de cobertura promedio, **{top_cov_energy}** lidera con alrededor de "
-            f"**{top_cov_value:.1f}%**, mientras que la fuente más limpia del escenario es "
-            f"**{cleanest_row['Tipo_Energia']}** con aproximadamente **{cleanest_row['co2_por_gwh']:.2f} ton CO₂/GWh**."
-        )
+            # Conclusión breve de la pestaña
+            avg_cov = cov.groupby("Tipo_Energia")["Cobertura_pct"].mean().sort_values(ascending=False)
+            top_cov_energy = avg_cov.index[0]
+            top_cov_value = avg_cov.iloc[0]
+            cleanest_row = emis.sort_values("co2_por_gwh").iloc[0]
+            st.markdown(
+                f"**Conclusión rápida:** en términos de cobertura promedio, **{top_cov_energy}** lidera con alrededor de "
+                f"**{top_cov_value:.1f}%**, mientras que la fuente más limpia del escenario es "
+                f"**{cleanest_row['Tipo_Energia']}** con aproximadamente **{cleanest_row['co2_por_gwh']:.2f} ton CO₂/GWh**."
+            )
 
     st.markdown("---")
     st.subheader(t["downloads_title"])
