@@ -27,8 +27,8 @@ La app está construida con **Streamlit**, utiliza **Pandas** para el manejo de 
 - **Claudia Arroyave**
 - **Michely Muñoz**
 - **Jesus Garcia**
-- **Luis Alfonso**
-- **Maria Alejandra Colorado**
+- **Luis Alfonso Giraldo Castro**
+- **Maria Alejandra Colorado Ríos**
 
 ## 🚀 Características principales
 
