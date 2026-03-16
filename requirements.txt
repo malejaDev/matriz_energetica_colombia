@@ -1,8 +1,8 @@
-streamlit
-pandas
-seaborn
-matplotlib
-numpy
-scipy
-plotly
-squarify
+streamlit>=1.31.0
+pandas>=2.1.4
+seaborn>=0.13.1
+matplotlib>=3.8.0
+numpy>=1.26.0
+scipy>=1.11.0
+plotly>=5.20.0
+squarify>=0.4.3

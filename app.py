@@ -9,6 +9,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.express as px
 import warnings
 
 # Ignorar warnings específicos de versiones nuevas
@@ -46,9 +47,36 @@ def load_data():
         st.error(f"Error cargando datos: {e}")
         return pd.DataFrame()
 
-# Función de ayuda
-def show_help(text):
+# Funciones de ayuda
+def show_help(text: str):
     st.info(f"💡 **Ayuda:** {text}", icon="ℹ️")
+
+
+def get_filtered_data(df: pd.DataFrame):
+    """Aplica filtros comunes y devuelve el dataframe filtrado y los parámetros usados."""
+    years = sorted(df['Año'].unique())
+    selected_years = st.sidebar.multiselect("📅 Años:", options=years, default=years, key="years_filter")
+
+    energy_types = sorted(df['Tipo_Energia'].unique())
+    selected_energy = st.sidebar.multiselect("⚡ Tipo de Energía:", options=energy_types, default=energy_types, key="energy_filter")
+
+    min_inv, max_inv = float(df['Inversion_USD_millones'].min()), float(df['Inversion_USD_millones'].max())
+    selected_inv = st.sidebar.slider(
+        "💰 Inversión (Millones USD):",
+        min_value=min_inv,
+        max_value=max_inv,
+        value=(min_inv, max_inv),
+        key="inv_filter",
+    )
+
+    df_f = df[
+        (df['Año'].isin(selected_years)) &
+        (df['Tipo_Energia'].isin(selected_energy)) &
+        (df['Inversion_USD_millones'] >= selected_inv[0]) &
+        (df['Inversion_USD_millones'] <= selected_inv[1])
+    ]
+
+    return df_f, selected_years, selected_energy, selected_inv
 
 # --- LANDING PAGE ---
 def landing_page():
@@ -109,32 +137,40 @@ def landing_page():
 
 # --- DASHBOARD PRINCIPAL ---
 def dashboard():
-    st.sidebar.header("🔍 Filtros de Análisis")
+    # Selección de idioma básica
+    lang = st.sidebar.selectbox("Idioma / Language", ["ES", "EN"], index=0, key="lang")
+
+    texts = {
+        "ES": {
+            "filters_title": "🔍 Filtros de Análisis",
+            "dashboard_title": "📊 Panel de Control Energético",
+            "no_data": "⚠️ No hay datos con los filtros seleccionados. Por favor ajusta los filtros.",
+            "downloads_title": "📥 Descarga de datos filtrados",
+            "download_label": "Descargar CSV filtrado",
+            "interactive_section": "📊 Visualizaciones Interactivas (Plotly)",
+        },
+        "EN": {
+            "filters_title": "🔍 Analysis Filters",
+            "dashboard_title": "📊 Energy Control Panel",
+            "no_data": "⚠️ No data for the selected filters. Please adjust them.",
+            "downloads_title": "📥 Download filtered data",
+            "download_label": "Download filtered CSV",
+            "interactive_section": "📊 Interactive Visualizations (Plotly)",
+        },
+    }
+    t = texts[lang]
+
+    st.sidebar.header(t["filters_title"])
     st.sidebar.markdown("---")
-    
-    # Filtros
-    years = sorted(df['Año'].unique())
-    selected_years = st.sidebar.multiselect("📅 Años:", options=years, default=years)
-    
-    energy_types = sorted(df['Tipo_Energia'].unique())
-    selected_energy = st.sidebar.multiselect("⚡ Tipo de Energía:", options=energy_types, default=energy_types)
-    
-    min_inv, max_inv = float(df['Inversion_USD_millones'].min()), float(df['Inversion_USD_millones'].max())
-    selected_inv = st.sidebar.slider("💰 Inversión (Millones USD):", min_value=min_inv, max_value=max_inv, value=(min_inv, max_inv))
-    
-    # Aplicar filtros
-    df_f = df[
-        (df['Año'].isin(selected_years)) &
-        (df['Tipo_Energia'].isin(selected_energy)) &
-        (df['Inversion_USD_millones'] >= selected_inv[0]) &
-        (df['Inversion_USD_millones'] <= selected_inv[1])
-    ]
-    
+
+    # Filtros reutilizables
+    df_f, selected_years, selected_energy, selected_inv = get_filtered_data(df)
+
     if df_f.empty:
-        st.warning("⚠️ No hay datos con los filtros seleccionados. Por favor ajusta los filtros.")
+        st.warning(t["no_data"])
         return
 
-    st.title("📊 Panel de Control Energético")
+    st.title(t["dashboard_title"])
     st.markdown("---")
     
     # KPIs
@@ -187,9 +223,62 @@ def dashboard():
         st.pyplot(fig)
         show_help("Diagrama de caja que muestra la mediana, cuartiles y valores atípicos del costo por MWh.")
 
-    # Nota: Aquí puedes replicar la estructura anterior para llegar a los 30 gráficos solicitados
-    # usando diferentes combinaciones de seaborn (heatmap, violinplot, scatterplot, pairplot, etc.)
-    
+    st.markdown("---")
+    st.subheader(t["interactive_section"])
+
+    tab1, tab2, tab3 = st.tabs(["Tendencia (Line)", "Costos vs Emisiones (Scatter)", "Mapa de calor (Heatmap)"])
+
+    with tab1:
+        fig_line = px.line(
+            df_f,
+            x="Año",
+            y="Generacion_GWh",
+            color="Tipo_Energia",
+            markers=True,
+            title="Tendencia interactiva de generación por año y tipo de energía",
+        )
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    with tab2:
+        fig_scatter = px.scatter(
+            df_f,
+            x="Costo_MWh",
+            y="Emisiones_CO2_toneladas",
+            color="Tipo_Energia",
+            size="Generacion_GWh",
+            hover_data=["Año"],
+            title="Relación costo vs emisiones (tamaño = generación)",
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    with tab3:
+        pivot = df_f.pivot_table(
+            index="Tipo_Energia",
+            columns="Año",
+            values="Generacion_GWh",
+            aggfunc="sum",
+            fill_value=0,
+        )
+        fig_heat = px.imshow(
+            pivot,
+            labels=dict(x="Año", y="Tipo de energía", color="Generación (GWh)"),
+            aspect="auto",
+            title="Mapa de calor de generación por año y tipo de energía",
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader(t["downloads_title"])
+
+    csv = df_f.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label=t["download_label"],
+        data=csv,
+        file_name="datos_filtrados_matriz_energetica_colombia.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
     st.markdown("---")
     st.caption("Desarrollado por: Claudia Arroyave, Michely Muñoz, Jesus Garcia, Luis Alfonso, Maria Alejandra Colorado")
 

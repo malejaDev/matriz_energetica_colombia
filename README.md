@@ -87,13 +87,22 @@ La carpeta `database/` centraliza la lógica de **base de datos relacional** del
 
 ### 📦 Dependencias principales
 
-Instala las dependencias mínimas con:
+Las dependencias del proyecto están definidas en `requirements.txt` con versiones mínimas recomendadas:
+
+- `streamlit>=1.31.0`
+- `pandas>=2.1.4`
+- `seaborn>=0.13.1`
+- `matplotlib>=3.8.0`
+- `numpy>=1.26.0`
+- `scipy>=1.11.0`
+- `plotly>=5.20.0`
+- `squarify>=0.4.3`
+
+Se recomienda crear un entorno virtual y luego instalar todas las dependencias con:
 
 ```bash
-pip install streamlit pandas seaborn matplotlib numpy
+pip install -r requirements.txt
 ```
-
-*(Opcionalmente puedes crear un entorno virtual antes de instalarlas.)*
 
 ## 🔧 Instalación
 
@@ -156,7 +165,7 @@ La aplicación tiene dos vistas principales:
     - Inversión total (Millones USD)
     - Cobertura promedio (%)
     - Emisiones totales de CO₂
-  - **Gráficos de ejemplo** (extensibles hasta 30+ visualizaciones):
+  - **Conjunto de visualizaciones interactivas** (extensibles hasta 30+ gráficos especializados):
     - Evolución de generación por año y tipo de energía.
     - Inversión total por año.
     - Distribución de generación por tipo de energía (gráfico de pastel).
