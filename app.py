@@ -489,6 +489,13 @@ def dashboard():
                 "Mide el aporte relativo de cobertura por tecnología en el tiempo. Valores mayores sugieren mejor capacidad de cubrir demanda.",
             )
 
+        # Conclusión breve de la pestaña
+        top_year = grouped.groupby("Año")["total_generacion_gwh"].sum().idxmax()
+        st.markdown(
+            f"**Conclusión rápida:** en el periodo filtrado, el año con mayor generación total simulada es "
+            f"**{top_year}**, lo que sugiere un pico de actividad energética en dicho año bajo este escenario."
+        )
+
     # 2) Eficiencia energética (3 gráficos)
     with adv_tab2:
         st.markdown("### Eficiencia energética (generación vs demanda)")
@@ -534,6 +541,14 @@ def dashboard():
         plotly_with_help(
             fig3,
             "Ranking de aporte total de generación (GWh) por fuente en el periodo filtrado.",
+        )
+
+        # Conclusión breve de la pestaña
+        best_eff = eff.sort_values("eficiencia_energetica", ascending=False).iloc[0]
+        st.markdown(
+            f"**Conclusión rápida:** la fuente con mejor relación generación/demanda en el escenario actual es "
+            f"**{best_eff['Tipo_Energia']}**, con una eficiencia aproximada de "
+            f"**{best_eff['eficiencia_energetica']:.2f}**."
         )
 
     # 3) Análisis de costos de generación (4 gráficos)
@@ -597,6 +612,13 @@ def dashboard():
             "Relación entre generación (GWh) y costo (USD/MWh) por registro. Ayuda a identificar economías de escala o outliers.",
         )
 
+        # Conclusión breve de la pestaña
+        cheapest = cost.sort_values("promedio").iloc[0]
+        st.markdown(
+            f"**Conclusión rápida:** la tecnología con **menor costo promedio** en el periodo filtrado es "
+            f"**{cheapest['Tipo_Energia']}**, con un costo medio cercano a **${cheapest['promedio']:.2f} USD/MWh**."
+        )
+
     # 4) Retorno de inversión energética (4 gráficos)
     with adv_tab4:
         st.markdown("### Retorno de inversión energética")
@@ -654,6 +676,14 @@ def dashboard():
         plotly_with_help(
             fig4,
             "Relaciona inversión con demanda agregada atendida. Ayuda a entender si el capital se dirige a fuentes con mayor demanda.",
+        )
+
+        # Conclusión breve de la pestaña
+        best_roi = inv.sort_values("generacion_por_dolar", ascending=False).iloc[0]
+        st.markdown(
+            f"**Conclusión rápida:** según el indicador de **generación por millón de USD**, la fuente con mejor retorno "
+            f"de inversión simulada es **{best_roi['Tipo_Energia']}**, con aproximadamente "
+            f"**{best_roi['generacion_por_dolar']:.2f} GWh/MUSD**."
         )
 
     # 5) Cobertura, limpieza y participación (5 gráficos)
@@ -743,6 +773,17 @@ def dashboard():
         plotly_with_help(
             fig5,
             "Clasifica la cobertura en BAJA/MEDIA/ALTA y muestra su distribución anual. Útil para evaluar consistencia de cobertura.",
+        )
+
+        # Conclusión breve de la pestaña
+        avg_cov = cov.groupby("Tipo_Energia")["Cobertura_pct"].mean().sort_values(ascending=False)
+        top_cov_energy = avg_cov.index[0]
+        top_cov_value = avg_cov.iloc[0]
+        cleanest_row = emis.sort_values("co2_por_gwh").iloc[0]
+        st.markdown(
+            f"**Conclusión rápida:** en términos de cobertura promedio, **{top_cov_energy}** lidera con alrededor de "
+            f"**{top_cov_value:.1f}%**, mientras que la fuente más limpia del escenario es "
+            f"**{cleanest_row['Tipo_Energia']}** con aproximadamente **{cleanest_row['co2_por_gwh']:.2f} ton CO₂/GWh**."
         )
 
     st.markdown("---")
